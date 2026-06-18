@@ -7,7 +7,7 @@ import json
 
 app = FastAPI()
 
-# Allow frontend (GitHub) to connect
+# Allow frontend (GitHub Pages)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,10 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-if not os.getenv("GROQ_API_KEY"):
-    raise ValueError("GROQ_API_KEY not set")
-
-# Get API key from environment (Render)
+# API key from environment (Render)
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 # Models
@@ -30,7 +27,7 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[Message]
 
-# API endpoint
+# Endpoint
 @app.post("/generate")
 def generate(request: ChatRequest):
     try:
@@ -39,7 +36,34 @@ def generate(request: ChatRequest):
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a recipe AI. Always respond in JSON format with recipes."
+                    "content": """
+You are Recipe Maker AI.
+
+STRICT RULES:
+- Only talk about food and recipes
+- ONLY return JSON
+- NO explanations
+- NO text outside JSON
+- Output must be valid JSON
+
+FORMAT:
+{
+  "recipes": [
+    {
+      "name": "string",
+      "ingredients": ["item1", "item2"],
+      "steps": ["step1", "step2"]
+    }
+  ],
+  "message": "string",
+  "question": "string",
+  "options": ["opt1", "opt2", "opt3"]
+}
+
+IMPORTANT:
+- If user gives ingredients → ALWAYS return at least 1 recipe
+- If unsure → still return a simple recipe
+"""
                 },
                 *[m.dict() for m in request.messages]
             ],
@@ -49,20 +73,48 @@ def generate(request: ChatRequest):
 
         content = response.choices[0].message.content
 
+        # 🔥 FORCE CLEAN JSON (VERY IMPORTANT)
         try:
-            return json.loads(content)
+            # Remove possible junk before/after JSON
+            start = content.find("{")
+            end = content.rfind("}") + 1
+            cleaned = content[start:end]
+
+            parsed = json.loads(cleaned)
         except:
-            return {
-                "recipes": [],
-                "message": "Tell me ingredients or a dish.",
-                "question": "What do you want to cook?",
-                "options": ["Egg recipes", "Chicken recipes", "Quick meals"]
+            parsed = {
+                "recipes": [
+                    {
+                        "name": "Simple Egg Fry",
+                        "ingredients": ["egg", "salt", "oil"],
+                        "steps": [
+                            "Heat oil in pan",
+                            "Crack egg",
+                            "Add salt",
+                            "Cook until done"
+                        ]
+                    }
+                ],
+                "message": "Here is a simple recipe.",
+                "question": "Want another recipe?",
+                "options": ["Chicken recipes", "Quick meals", "Breakfast ideas"]
             }
+
+        return parsed
 
     except Exception as e:
         return {
-            "recipes": [],
-            "message": "Server error. Try again.",
-            "question": "What do you want to cook?",
-            "options": ["Simple recipes", "Snacks", "Dinner ideas"]
+            "recipes": [
+                {
+                    "name": "Basic Toast",
+                    "ingredients": ["bread", "butter"],
+                    "steps": [
+                        "Toast the bread",
+                        "Apply butter"
+                    ]
+                }
+            ],
+            "message": "Fallback recipe due to error.",
+            "question": "Try another ingredient?",
+            "options": ["Egg", "Rice", "Snacks"]
         }

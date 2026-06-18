@@ -128,7 +128,6 @@ img {
 </div>
 
 <script>
-
 let chatHistory = [];
 
 function addMessage(content, type) {
@@ -178,46 +177,35 @@ async function sendMessage() {
 
         renderResponse(data, loading);
 
-    } catch {
+    } catch (err) {
+        console.error(err);
         loading.innerHTML = "❌ Server error";
     }
 }
 
 function renderResponse(data, element) {
-
     let html = "";
 
-    // 🔹 Message (fallback / redirect)
     if (data.message) {
         html += `<p>${data.message}</p>`;
     }
 
-    // 🔹 Recipes
     if (data.recipes && data.recipes.length > 0) {
         data.recipes.forEach(r => {
-            const img = `https://source.unsplash.com/400x300/?${r.name}`;
-
             html += `
                 <div class="card">
                     <div class="title">${r.name}</div>
-
-                    <img src="${img}">
 
                     <b>🧂 Ingredients:</b>
                     <ul>${r.ingredients.map(i => `<li>${i}</li>`).join("")}</ul>
 
                     <b>👨‍🍳 Steps:</b>
                     <ol>${r.steps.map(s => `<li>${s}</li>`).join("")}</ol>
-
-                    <a href="https://www.youtube.com/results?search_query=${r.name}+recipe" target="_blank">
-                        ▶️ Watch Tutorial
-                    </a>
                 </div>
             `;
         });
     }
 
-    // 🔹 Always guide user back to food
     html += `
         <div class="bot-extra">
             <p>${data.question || "What do you want to cook next?"}</p>
@@ -241,7 +229,6 @@ document.getElementById("input").addEventListener("keydown", function(e) {
         sendMessage();
     }
 });
-
 </script>
 
 </body>
