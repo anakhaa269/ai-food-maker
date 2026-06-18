@@ -31,90 +31,82 @@ class ChatRequest(BaseModel):
 @app.post("/generate")
 def generate(request: ChatRequest):
     try:
+        user_input = request.messages[-1].content
+
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {
                     "role": "system",
                     "content": """
-You are Recipe Maker AI.
+You are a cooking assistant.
 
-STRICT RULES:
-- Only talk about food and recipes
-- ONLY return JSON
-- NO explanations
-- NO text outside JSON
-- Output must be valid JSON
+Give a recipe clearly in this format:
 
-FORMAT:
-{
-  "recipes": [
-    {
-      "name": "string",
-      "ingredients": ["item1", "item2"],
-      "steps": ["step1", "step2"]
-    }
-  ],
-  "message": "string",
-  "question": "string",
-  "options": ["opt1", "opt2", "opt3"]
-}
+Recipe Name:
+Ingredients:
+- item 1
+- item 2
 
-IMPORTANT:
-- If user gives ingredients → ALWAYS return at least 1 recipe
-- If unsure → still return a simple recipe
+Steps:
+1. step one
+2. step two
+
+Do NOT return JSON.
+Just plain text in this format.
 """
                 },
-                *[m.dict() for m in request.messages]
+                {"role": "user", "content": user_input}
             ],
-            temperature=0.6,
-            max_tokens=700
+            temperature=0.7,
+            max_tokens=500
         )
 
-        content = response.choices[0].message.content
+        text = response.choices[0].message.content
 
-        # 🔥 FORCE CLEAN JSON (VERY IMPORTANT)
-        try:
-            # Remove possible junk before/after JSON
-            start = content.find("{")
-            end = content.rfind("}") + 1
-            cleaned = content[start:end]
+        # 🔥 PARSE TEXT → STRUCTURE
+        name = "Recipe"
+        ingredients = []
+        steps = []
 
-            parsed = json.loads(cleaned)
-        except:
-            parsed = {
-                "recipes": [
-                    {
-                        "name": "Simple Egg Fry",
-                        "ingredients": ["egg", "salt", "oil"],
-                        "steps": [
-                            "Heat oil in pan",
-                            "Crack egg",
-                            "Add salt",
-                            "Cook until done"
-                        ]
-                    }
-                ],
-                "message": "Here is a simple recipe.",
-                "question": "Want another recipe?",
-                "options": ["Chicken recipes", "Quick meals", "Breakfast ideas"]
-            }
+        lines = text.split("\n")
 
-        return parsed
+        for line in lines:
+            line = line.strip()
 
-    except Exception as e:
+            if "recipe name" in line.lower():
+                name = line.split(":")[-1].strip()
+
+            elif line.startswith("-"):
+                ingredients.append(line.replace("-", "").strip())
+
+            elif line.startswith("1.") or line.startswith("2.") or line.startswith("3.") or line.startswith("4."):
+                steps.append(line)
+
+        # fallback if AI messy
+        if not ingredients:
+            ingredients = ["egg", "salt", "oil"]
+
+        if not steps:
+            steps = ["Cook ingredients properly"]
+
         return {
             "recipes": [
                 {
-                    "name": "Basic Toast",
-                    "ingredients": ["bread", "butter"],
-                    "steps": [
-                        "Toast the bread",
-                        "Apply butter"
-                    ]
+                    "name": name,
+                    "ingredients": ingredients,
+                    "steps": steps
                 }
             ],
-            "message": "Fallback recipe due to error.",
-            "question": "Try another ingredient?",
-            "options": ["Egg", "Rice", "Snacks"]
+            "message": "Here’s your recipe!",
+            "question": "Want another recipe?",
+            "options": ["Chicken", "Snacks", "Dinner"]
+        }
+
+    except Exception as e:
+        return {
+            "recipes": [],
+            "message": "AI error. Try again.",
+            "question": "What do you want to cook?",
+            "options": ["Egg", "Chicken", "Snacks"]
         }
