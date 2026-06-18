@@ -1,13 +1,15 @@
 from fastapi import FastAPI
 from pydantic import BaseModel
-from fastapi.middleware.cors import CORSMiddleware
-from groq import Groq
+from dotenv import load_dotenv
 import os
+from groq import Groq
+from fastapi.middleware.cors import CORSMiddleware
 import json
+
+load_dotenv()
 
 app = FastAPI()
 
-# Allow frontend (GitHub Pages)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -16,10 +18,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# API key from environment (Render)
 client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
-# Models
 class Message(BaseModel):
     role: str
     content: str
@@ -27,86 +27,67 @@ class Message(BaseModel):
 class ChatRequest(BaseModel):
     messages: list[Message]
 
-# Endpoint
 @app.post("/generate")
 def generate(request: ChatRequest):
     try:
-        user_input = request.messages[-1].content
-
         response = client.chat.completions.create(
             model="llama-3.1-8b-instant",
             messages=[
                 {
                     "role": "system",
                     "content": """
-You are a cooking assistant.
+You are Recipe Maker AI — a strict cooking assistant.
 
-Give a recipe clearly in this format:
+RULES:
+- ONLY talk about food, cooking, recipes
+- If user asks unrelated things → redirect to food
+- ALWAYS return JSON
 
-Recipe Name:
-Ingredients:
-- item 1
-- item 2
+FORMAT:
+{
+  "recipes": [
+    {
+      "name": "",
+      "ingredients": [],
+      "steps": []
+    }
+  ],
+  "message": "",
+  "question": "",
+  "options": ["", "", ""]
+}
 
-Steps:
-1. step one
-2. step two
+LOGIC:
+- If user gives ingredients → generate recipes
+- If user unclear → ask food-related question
+- If user says random stuff → redirect:
+  "I focus on cooking. Tell me ingredients or dish."
 
-Do NOT return JSON.
-Just plain text in this format.
+NO OTHER BEHAVIOR.
 """
                 },
-                {"role": "user", "content": user_input}
+                *[m.dict() for m in request.messages]
             ],
-            temperature=0.7,
-            max_tokens=500
+            temperature=0.6,
+            max_tokens=700
         )
 
-        text = response.choices[0].message.content
+        content = response.choices[0].message.content
 
-        # 🔥 PARSE TEXT → STRUCTURE
-        name = "Recipe"
-        ingredients = []
-        steps = []
+        try:
+            return json.loads(content)
+        except:
+            return {
+                "recipes": [],
+                "message": "I focus on cooking. Tell me ingredients or a dish.",
+                "question": "What do you want to cook?",
+                "options": ["Egg recipes", "Chicken recipes", "Quick meals"]
+            }
 
-        lines = text.split("\n")
-
-        for line in lines:
-            line = line.strip()
-
-            if "recipe name" in line.lower():
-                name = line.split(":")[-1].strip()
-
-            elif line.startswith("-"):
-                ingredients.append(line.replace("-", "").strip())
-
-            elif line.startswith("1.") or line.startswith("2.") or line.startswith("3.") or line.startswith("4."):
-                steps.append(line)
-
-        # fallback if AI messy
-        if not ingredients:
-            ingredients = ["egg", "salt", "oil"]
-
-        if not steps:
-            steps = ["Cook ingredients properly"]
-
-        return {
-            "recipes": [
-                {
-                    "name": name,
-                    "ingredients": ingredients,
-                    "steps": steps
-                }
-            ],
-            "message": "Here’s your recipe!",
-            "question": "Want another recipe?",
-            "options": ["Chicken", "Snacks", "Dinner"]
-        }
-
-    except Exception as e:
+    except:
         return {
             "recipes": [],
-            "message": "AI error. Try again.",
+            "message": "Error occurred. Try again.",
             "question": "What do you want to cook?",
-            "options": ["Egg", "Chicken", "Snacks"]
+            "options": ["Simple recipes", "Snacks", "Dinner ideas"]
         }
